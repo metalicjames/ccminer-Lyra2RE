@@ -12,13 +12,12 @@
 #define __launch_bounds__(x)
 #endif
 
-
 extern cudaError_t MyStreamSynchronize(cudaStream_t stream, int situation, int thr_id);
-extern int device_major[8];
-extern int device_minor[8];
+extern int compute_version[8];
 uint32_t *d_gnounce[8];
 uint32_t *d_GNonce[8];
 __constant__ uint32_t pTarget[8];
+
 
 static __device__ void LOHI(uint32_t &lo, uint32_t &hi, uint64_t x)
 {
@@ -125,14 +124,13 @@ extern uint32_t T2dn_cpu[];
 extern uint32_t T3up_cpu[];
 extern uint32_t T3dn_cpu[];
 
-__device__ __forceinline__ void quark_groestl256_perm_P(int thread,uint32_t *a, char *mixtabs)
+__device__ __forceinline__ void groestl256_perm_P(uint32_t *a, uint32_t *mixtabs)
 {
 	
-
+        uint32_t t[16];
 	#pragma unroll 
 	for (int r = 0; r<10; r++)
 	{
-        uint32_t t[16];
 
 		    a[0x0] ^= PC32up(0x00, r); 
 			a[0x2] ^= PC32up(0x10, r); 
@@ -158,27 +156,68 @@ __device__ __forceinline__ void quark_groestl256_perm_P(int thread,uint32_t *a, 
 	}
 }
 
-__device__ __forceinline__ void quark_groestl256_perm_Q(int thread, uint32_t *a, char *mixtabs)
+__device__ __forceinline__ void groestl256_perm_Pf( uint32_t *a, uint32_t *mixtabs)
 {
+
+	uint32_t t[16];
+#pragma unroll 
+	for (int r = 0; r<9; r++)
+	{
+		a[0x0] ^= PC32up(0x00, r);
+		a[0x2] ^= PC32up(0x10, r);
+		a[0x4] ^= PC32up(0x20, r);
+		a[0x6] ^= PC32up(0x30, r);
+		a[0x8] ^= PC32up(0x40, r);
+		a[0xA] ^= PC32up(0x50, r);
+		a[0xC] ^= PC32up(0x60, r);
+		a[0xE] ^= PC32up(0x70, r);
+		RSTT(0x0, 0x1, a, 0x0, 0x2, 0x4, 0x6, 0x9, 0xB, 0xD, 0xF);
+		RSTT(0x2, 0x3, a, 0x2, 0x4, 0x6, 0x8, 0xB, 0xD, 0xF, 0x1);
+		RSTT(0x4, 0x5, a, 0x4, 0x6, 0x8, 0xA, 0xD, 0xF, 0x1, 0x3);
+		RSTT(0x6, 0x7, a, 0x6, 0x8, 0xA, 0xC, 0xF, 0x1, 0x3, 0x5);
+		RSTT(0x8, 0x9, a, 0x8, 0xA, 0xC, 0xE, 0x1, 0x3, 0x5, 0x7);
+		RSTT(0xA, 0xB, a, 0xA, 0xC, 0xE, 0x0, 0x3, 0x5, 0x7, 0x9);
+		RSTT(0xC, 0xD, a, 0xC, 0xE, 0x0, 0x2, 0x5, 0x7, 0x9, 0xB);
+		RSTT(0xE, 0xF, a, 0xE, 0x0, 0x2, 0x4, 0x7, 0x9, 0xB, 0xD);
+
+#pragma unroll 
+		for (int k = 0; k<16; k++)
+			a[k] = t[k];
+
+	}
+	a[0x0] ^= 0x09;
+	a[0x2] ^= 0x19;
+	a[0x4] ^= 0x29;
+	a[0xE] ^= 0x79;
+	RSTT(0xE, 0xF, a, 0xE, 0x0, 0x2, 0x4, 0x7, 0x9, 0xB, 0xD);
+
+		a[15] = t[15];
+
+}
+
+
+
+__device__ __forceinline__ void groestl256_perm_Q(uint32_t *a, uint32_t *mixtabs)
+{
+		uint32_t t[16];
 	#pragma unroll 
 	for (int r = 0; r<10; r++)
 	{
-		uint32_t t[16];
-		   a[0x0] ^= QC32up(0x00, r); 
+		    a[0x0] = ~a[0x0];
 			a[0x1] ^= QC32dn(0x00, r); 
-			a[0x2] ^= QC32up(0x10, r); 
+			a[0x2] = ~a[0x2];
 			a[0x3] ^= QC32dn(0x10, r); 
-			a[0x4] ^= QC32up(0x20, r); 
+			a[0x4] = ~a[0x4];
 			a[0x5] ^= QC32dn(0x20, r); 
-			a[0x6] ^= QC32up(0x30, r); 
+			a[0x6] = ~a[0x6];
 			a[0x7] ^= QC32dn(0x30, r); 
-			a[0x8] ^= QC32up(0x40, r); 
+			a[0x8] = ~a[0x8];
 			a[0x9] ^= QC32dn(0x40, r); 
-			a[0xA] ^= QC32up(0x50, r); 
+			a[0xA] = ~a[0xA];
 			a[0xB] ^= QC32dn(0x50, r); 
-			a[0xC] ^= QC32up(0x60, r); 
+			a[0xC] = ~a[0xC];
 			a[0xD] ^= QC32dn(0x60, r); 
-			a[0xE] ^= QC32up(0x70, r); 
+			a[0xE] = ~a[0xE];
 			a[0xF] ^= QC32dn(0x70, r); 
 			RSTT(0x0, 0x1, a, 0x2, 0x6, 0xA, 0xE, 0x1, 0x5, 0x9, 0xD); 
 			RSTT(0x2, 0x3, a, 0x4, 0x8, 0xC, 0x0, 0x3, 0x7, 0xB, 0xF); 
@@ -198,13 +237,11 @@ __device__ __forceinline__ void quark_groestl256_perm_Q(int thread, uint32_t *a,
 }
 
 
-
-
 __global__ __launch_bounds__(256,1) void groestl256_gpu_hash32(int threads, uint32_t startNounce, uint64_t *outputHash, uint32_t *nonceVector)
 {
 	
 #if USE_SHARED
-  extern __shared__ char mixtabs[];
+  extern __shared__ uint32_t mixtabs[];
 
 	if (threadIdx.x < 256)
 	{
@@ -248,35 +285,28 @@ __global__ __launch_bounds__(256,1) void groestl256_gpu_hash32(int threads, uint
 		
 #if USE_SHARED
 		
-		quark_groestl256_perm_P(thread,state, mixtabs);		
+		groestl256_perm_P(state, mixtabs);		
 		state[15] ^= 0x10000;		
-		quark_groestl256_perm_Q(thread,message, mixtabs);
+		groestl256_perm_Q(message, mixtabs);
 		
 #else
-		quark_groestl512_perm_P(thread,state, NULL);
+		groestl256_perm_P(state, NULL);
 		state[15] ^= 0x10000;
-		quark_groestl512_perm_Q(thread,message, NULL);
+		groestl256_perm_Q(message, NULL);
 #endif
 #pragma unroll 16
 		for (int u = 0; u<16; u++) state[u] ^= message[u];
-#pragma unroll 16
-		for (int u = 0; u<16; u++) message[u] = state[u];
+		message[15] = state[15];
+
 #if USE_SHARED
-		quark_groestl256_perm_P(thread,message, mixtabs);
+		groestl256_perm_Pf(state, mixtabs);
 #else
-		quark_groestl256_perm_P(thread,message, NULL);
+		groestl256_perm_Pf(state, NULL);
 #endif
-//#pragma unroll 16
-//		for (int u = 14; u<16; u++) 
-state[14] ^= message[14];
+
 state[15] ^= message[15];
 
-		// Erzeugten Hash rausschreiben
 		if (state[15] <= pTarget[7]) { nonceVector[0] = nonce; }
-
-//#pragma unroll 4
-//		for (int u = 4; u<8; u++) {if (thread==3) {printf("GPU %d groestl %08x %08x\n",u,state[2*u],state[2*u+1]);}}
-
 }
 }
 
@@ -290,6 +320,9 @@ state[15] ^= message[15];
 	texname.addressMode[0] = cudaAddressModeClamp; \
 	{ cudaChannelFormatDesc channelDesc = cudaCreateChannelDesc<unsigned int>(); \
 	  cudaBindTexture(NULL, &texname, texmem, &channelDesc, texsize ); } \
+
+
+
 
 
    
@@ -314,7 +347,11 @@ __host__ uint32_t groestl256_cpu_hash_32(int thr_id, int threads, uint32_t start
 {
 	uint32_t result = 0xffffffff;
 	cudaMemset(d_GNonce[thr_id], 0xff, sizeof(uint32_t));
+
+
+
 	const int threadsperblock = 256; 
+
 
 	// berechne wie viele Thread Blocks wir brauchen
 	dim3 grid((threads + threadsperblock-1)/threadsperblock);
@@ -329,7 +366,7 @@ __host__ uint32_t groestl256_cpu_hash_32(int thr_id, int threads, uint32_t start
 
 	MyStreamSynchronize(NULL, order, thr_id);
 	cudaMemcpy(d_gnounce[thr_id], d_GNonce[thr_id], sizeof(uint32_t), cudaMemcpyDeviceToHost);
-	cudaThreadSynchronize();
+//	cudaThreadSynchronize();
 	result = *d_gnounce[thr_id];
 
 	return result;

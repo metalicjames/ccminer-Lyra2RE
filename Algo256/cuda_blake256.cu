@@ -14,9 +14,8 @@
 #include <memory.h>
 
 extern cudaError_t MyStreamSynchronize(cudaStream_t stream, int situation, int thr_id);
-extern int device_major[8];
-extern int device_minor[8];
 
+extern int compute_version[8];
 #include "cuda_helper.h"
 
 __constant__ static uint32_t  c_data[20];

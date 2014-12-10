@@ -26,8 +26,6 @@ static __constant__ uint2 blake2b_IV[8] =
 	{ 0xfb41bd6b, 0x1f83d9ab  },
 	{ 0x137e2179, 0x5be0cd19  }
 };
-// data: 0-4 outputhash 4-8 outputhash 8-16 basil
-
 
 #define reduceDuplexRowSetup(rowIn, rowInOut, rowOut) \
   { \
@@ -105,84 +103,6 @@ static __constant__ uint2 blake2b_IV[8] =
 	round_lyra_v35(state); \
 	round_lyra_v35(state); \
   } 
-//// test version
-#define reduceDuplexRowSetup_test(rowIn, rowInOut, rowOut) \
-  { \
-	for (int i = 0; i < 8; i++) \
-				{ \
-\
-		for (int j = 0; j < 12; j++) {state[j] ^= Matrix[j][i][rowIn] + Matrix[j][i][rowInOut];} \
-		round_lyra_v35(state); \
-		for (int j = 0; j < 12; j++) {Matrix[j][7-i][rowOut] = Matrix[j][i][rowIn] ^ state[j];} \
-\
-		Matrix[0][i][rowInOut] ^= state[11]; \
-		Matrix[1][i][rowInOut] ^= state[0]; \
-		Matrix[2][i][rowInOut] ^= state[1]; \
-		Matrix[3][i][rowInOut] ^= state[2]; \
-		Matrix[4][i][rowInOut] ^= state[3]; \
-		Matrix[5][i][rowInOut] ^= state[4]; \
-		Matrix[6][i][rowInOut] ^= state[5]; \
-		Matrix[7][i][rowInOut] ^= state[6]; \
-		Matrix[8][i][rowInOut] ^= state[7]; \
-		Matrix[9][i][rowInOut] ^= state[8]; \
-		Matrix[10][i][rowInOut] ^= state[9]; \
-		Matrix[11][i][rowInOut] ^= state[10]; \
-				} \
- \
-  } 
-
-#define reduceDuplexRow_test(rowIn, rowInOut, rowOut) \
-  { \
-	 for (int i = 0; i < 8; i++) \
-	 	 	 	 	 { \
-		 for (int j = 0; j < 12; j++) \
-			 state[j] ^= Matrix[j][i][rowIn] + Matrix[j][i][rowInOut]; \
- \
-		 round_lyra_v35(state); \
-		 for (int j = 0; j < 12; j++) {Matrix[j][i][rowOut] ^= state[j];} \
-\
-		 Matrix[0][i][rowInOut] ^= state[11]; \
-		 Matrix[1][i][rowInOut] ^= state[0]; \
-		 Matrix[2][i][rowInOut] ^= state[1]; \
-		 Matrix[3][i][rowInOut] ^= state[2]; \
-		 Matrix[4][i][rowInOut] ^= state[3]; \
-		 Matrix[5][i][rowInOut] ^= state[4]; \
-		 Matrix[6][i][rowInOut] ^= state[5]; \
-		 Matrix[7][i][rowInOut] ^= state[6]; \
-		 Matrix[8][i][rowInOut] ^= state[7]; \
-		 Matrix[9][i][rowInOut] ^= state[8]; \
-		 Matrix[10][i][rowInOut] ^= state[9]; \
-		 Matrix[11][i][rowInOut] ^= state[10]; \
-	 	 	 	 	 } \
- \
-  } 
-#define absorbblock_test(in)  { \
-	state[0] ^= Matrix[0][0][ in]; \
-	state[1] ^= Matrix[1][0][in]; \
-	state[2] ^= Matrix[2][0][in]; \
-	state[3] ^= Matrix[3][0][in]; \
-	state[4] ^= Matrix[4][0][in]; \
-	state[5] ^= Matrix[5][0][in]; \
-	state[6] ^= Matrix[6][0][in]; \
-	state[7] ^= Matrix[7][0][in]; \
-	state[8] ^= Matrix[8][0][in]; \
-	state[9] ^= Matrix[9][0][in]; \
-	state[10] ^= Matrix[10][0][in]; \
-	state[11] ^= Matrix[11][0][in]; \
-	round_lyra_v35(state); \
-	round_lyra_v35(state); \
-	round_lyra_v35(state); \
-	round_lyra_v35(state); \
-	round_lyra_v35(state); \
-	round_lyra_v35(state); \
-	round_lyra_v35(state); \
-	round_lyra_v35(state); \
-	round_lyra_v35(state); \
-	round_lyra_v35(state); \
-	round_lyra_v35(state); \
-	round_lyra_v35(state); \
-  } 
-
 
 //// compute 30 version 
 #define reduceDuplexRowSetup_v30(rowIn, rowInOut, rowOut) \
@@ -272,6 +192,7 @@ static __constant__ uint2 blake2b_IV[8] =
 	 a += b; d ^= a; d = ROR2(d, 16);
 	 c += d; b ^= c; b = ROR2(b, 63);
  }
+
 
  static __device__ __forceinline__ void Gfunc_v30(uint64_t & a, uint64_t &b, uint64_t &c, uint64_t &d)
  {
@@ -469,85 +390,6 @@ __global__ void __launch_bounds__(256, 1) lyra2_gpu_hash_32(int threads, uint32_
 		reduceDuplexRow(2, rowa, 5);
 
 		absorbblock(rowa);
-
-
-#pragma unroll
-		for (int i = 0; i<4; i++) {
-			outputHash[threads*i + thread] = devectorize(state[i]);
-		} //password
-
-
-	} //thread
-}
-
-__global__ void __launch_bounds__(256, 1) lyra2_gpu_hash_32_test(int threads, uint32_t startNounce, uint64_t *outputHash)
-{
-
-	int thread = (blockDim.x * blockIdx.x + threadIdx.x);
-	if (thread < threads)
-	{
-		uint2 state[16];
-#pragma unroll
-		for (int i = 0; i<4; i++) { LOHI(state[i].x, state[i].y, outputHash[threads*i + thread]); } //password
-#pragma unroll
-		for (int i = 0; i<4; i++) { state[i + 4] = state[i]; } //salt 
-#pragma unroll
-		for (int i = 0; i<8; i++) { state[i + 8] = blake2b_IV[i]; }
-
-		//     blake2blyra x2 
-#pragma unroll 24
-		for (int i = 0; i<24; i++) { round_lyra_v35(state); } //because 12 is not enough
-
-		uint2 Matrix[12][8][8]; // not cool
-
-		/// reducedSqueezeRow0
-#pragma unroll 8 
-		for (int i = 0; i < 8; i++)
-		{
-#pragma unroll 12
-			for (int j = 0; j<12; j++) { Matrix[j][7-i][0] = state[j]; }
-			round_lyra_v35(state);
-		}
-
-		/// reducedSqueezeRow1
-#pragma unroll 8 
-		for (int i = 0; i < 8; i++)
-		{
-#pragma unroll 12
-			for (int j = 0; j<12; j++) { state[j] ^= Matrix[j][i][0]; }
-			round_lyra_v35(state);
-#pragma unroll 12  
-			for (int j = 0; j<12; j++) { Matrix[j][7-i][1] = Matrix[j][i][0] ^ state[j]; }
-		}
-
-		reduceDuplexRowSetup_test(1, 0, 2);
-		reduceDuplexRowSetup_test(2, 1, 3);
-		reduceDuplexRowSetup_test(3, 0, 4);
-		reduceDuplexRowSetup_test(4, 3, 5);
-		reduceDuplexRowSetup_test(5, 2, 6);
-		reduceDuplexRowSetup_test(6, 1, 7);
-
-
-
-		uint64_t rowa;
-		rowa = devectorize(state[0]) & 7;
-		reduceDuplexRow_test(7, rowa, 0);
-		rowa = devectorize(state[0]) & 7;
-		reduceDuplexRow_test(0, rowa, 3);
-		rowa = devectorize(state[0]) & 7;
-		reduceDuplexRow_test(3, rowa, 6);
-		rowa = devectorize(state[0]) & 7;
-		reduceDuplexRow_test(6, rowa, 1);
-		rowa = devectorize(state[0]) & 7;
-		reduceDuplexRow_test(1, rowa, 4);
-		rowa = devectorize(state[0]) & 7;
-		reduceDuplexRow_test(4, rowa, 7);
-		rowa = devectorize(state[0]) & 7;
-		reduceDuplexRow_test(7, rowa, 2);
-		rowa = devectorize(state[0]) & 7;
-		reduceDuplexRow_test(2, rowa, 5);
-
-		absorbblock_test(rowa);
 
 
 #pragma unroll

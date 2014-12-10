@@ -10,9 +10,7 @@
 
 
 extern cudaError_t MyStreamSynchronize(cudaStream_t stream, int situation, int thr_id);
-extern int device_major[8];
-extern int device_minor[8];
-
+extern int compute_version[8];
 #include "cuda_helper.h"
 
 static const uint64_t host_keccak_round_constants[24] = {
@@ -42,9 +40,9 @@ static __device__ __forceinline__ void keccak_blockv35(uint2 *s, const uint64_t 
 	size_t i;
 	uint2 t[5], u[5], v, w;
 	
-    #pragma unroll
 
-	//    #pragma unroll
+
+    #pragma unroll
 	for (i = 0; i < 24; i++) {
 		/* theta: c = a[0,i] ^ a[1,i] ^ .. a[4,i] */
 		t[0] = s[0] ^ s[5] ^ s[10] ^ s[15] ^ s[20];
@@ -188,11 +186,11 @@ __global__ void __launch_bounds__(256,3) keccak256_gpu_hash_80(int threads, uint
            #pragma unroll 25
            for (int i=0; i<25; i++) {
 			if(i<9) {keccak_gpu_state[i] = vectorize(c_PaddedMessage80[i]);}
-			else    {keccak_gpu_state[i] = {0,0};}}
+			else    {keccak_gpu_state[i] = make_uint2(0,0);}}
 		   keccak_gpu_state[9]= vectorize(c_PaddedMessage80[9]);
 		   keccak_gpu_state[9].y = cuda_swab32(nounce);
-           keccak_gpu_state[10]={1,0};
-		   keccak_gpu_state[16]={0,0x80000000};
+           keccak_gpu_state[10]=make_uint2(1,0);
+		   keccak_gpu_state[16]=make_uint2(0,0x80000000);
            keccak_blockv35(keccak_gpu_state,keccak_round_constants);
 		
 			if (devectorize(keccak_gpu_state[3]) <= ((uint64_t*)pTarget)[3]) {resNounce[0] = nounce;}		
@@ -224,29 +222,37 @@ __global__ void __launch_bounds__(256,3) keccak256_gpu_hash_32(int threads, uint
 	if (thread < threads)
 	{
 
-		uint32_t nounce = startNounce + thread;
-#if __CUDA_ARCH__ >= 350
 
 		uint2 keccak_gpu_state[25];
 #pragma unroll 25
 		for (int i = 0; i<25; i++) {
 			if (i<4) { keccak_gpu_state[i] = vectorize(outputHash[i*threads+thread]); }
-			else    { keccak_gpu_state[i] = { 0, 0 }; }
+			else    { keccak_gpu_state[i] =  make_uint2(0, 0 ); }
 		}
-		keccak_gpu_state[4] = { 1, 0 };
-		keccak_gpu_state[16] = { 0, 0x80000000 };
+		keccak_gpu_state[4] = make_uint2( 1, 0 );
+		keccak_gpu_state[16] = make_uint2( 0, 0x80000000);
 		keccak_blockv35(keccak_gpu_state, keccak_round_constants);
 
 #pragma unroll 4
 		for (int i=0; i<4;i++) {
 outputHash[i*threads+thread]=devectorize(keccak_gpu_state[i]);} 
 
-#else 
+
+	} //thread
+}
+
+  
+__global__ void __launch_bounds__(256, 3) keccak256_gpu_hash_32_v30(int threads, uint32_t startNounce, uint64_t *outputHash)
+{
+
+	int thread = (blockDim.x * blockIdx.x + threadIdx.x);
+	if (thread < threads)
+	{
 
 		uint64_t keccak_gpu_state[25];
 #pragma unroll 25
 		for (int i = 0; i<25; i++) {
-			if (i<4) { keccak_gpu_state[i] = outputHash[i*threads+thread]; }
+			if (i<4) { keccak_gpu_state[i] = outputHash[i*threads + thread]; }
 			else    { keccak_gpu_state[i] = 0; }
 		}
 		keccak_gpu_state[4] = 0x0000000000000001;
@@ -255,13 +261,12 @@ outputHash[i*threads+thread]=devectorize(keccak_gpu_state[i]);}
 		keccak_blockv30(keccak_gpu_state, keccak_round_constants);
 #pragma unroll 4
 		for (int i = 0; i<4; i++) { outputHash[i*threads + thread] = keccak_gpu_state[i]; }
-#endif
-
 
 	} //thread
 }
 
-   
+
+ 
 void keccak256_cpu_init(int thr_id, int threads)
 {
     
@@ -303,9 +308,12 @@ __host__ void keccak256_cpu_hash_32(int thr_id, int threads, uint32_t startNounc
 	dim3 block(threadsperblock);
 
 	size_t shared_size = 0;
-
+	if (compute_version[thr_id] >= 35) {
 	keccak256_gpu_hash_32 << <grid, block, shared_size >> >(threads, startNounce, d_outputHash);
-
+	}
+	else {
+	keccak256_gpu_hash_32_v30 << <grid, block, shared_size >> >(threads, startNounce, d_outputHash);
+	}
 	MyStreamSynchronize(NULL, order, thr_id);
 
 }
